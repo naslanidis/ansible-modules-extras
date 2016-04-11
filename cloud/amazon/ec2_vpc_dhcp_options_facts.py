@@ -19,7 +19,7 @@ module: ec2_vpc_dhcp_options_facts
 short_description: Gather facts about dhcp options sets in AWS
 description:
     - Gather facts about dhcp options sets in AWS
-version_added: "2.0"
+version_added: "2.1"
 author: "Nick Aslanidis (@naslanidis)"
 options:
   filters:
@@ -62,6 +62,18 @@ EXAMPLES = '''
     DhcpOptionsIds: dopt-123fece2
   register: dhcp_facts
 
+'''
+
+RETURN = '''
+dhcp_options:
+    description: The dhcp option sets for the account
+    returned: always
+    type: list
+
+changed:
+    description: True if listing the dhcp options succeeds
+    type: bool
+    returned: always
 '''
 
 try:
@@ -147,4 +159,3 @@ from ansible.module_utils.ec2 import *
 
 if __name__ == '__main__':
     main()
-
