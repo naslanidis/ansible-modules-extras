@@ -149,9 +149,9 @@ def main():
         module.fail_json(msg="Can't authorize connection - "+str(e))
 
     # call your function here
-    list_dhcp_options(connection, module)
-
-    module.exit_json(changed=changed, rt_facts_result=results)
+    results = list_dhcp_options(connection, module)
+    
+    module.exit_json(result=results)
 
 # import module snippets
 from ansible.module_utils.basic import *
