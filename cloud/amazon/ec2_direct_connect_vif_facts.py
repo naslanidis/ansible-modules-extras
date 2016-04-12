@@ -150,7 +150,6 @@ def main():
     # call your function here
     results = list_dc_vifs(connection, module)
 
-    #module.exit_json(changed=changed, dc_vif_facts_result=results)
     module.exit_json(result=results)
 
 # import module snippets
