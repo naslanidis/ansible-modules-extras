@@ -86,11 +86,11 @@ except ImportError:
 
 
 def get_dhcp_options_info(dhcp_option):
-   dhcp_option_info = {'DhcpOptionsId': dhcp_option['DhcpOptionsId'],
+    dhcp_option_info = {'DhcpOptionsId': dhcp_option['DhcpOptionsId'],
                        'DhcpConfigurations': dhcp_option['DhcpConfigurations'],
                        'Tags': dhcp_option['Tags']
                }
-   return dhcp_option_info
+    return dhcp_option_info
 
 
 def list_dhcp_options(client, module):
