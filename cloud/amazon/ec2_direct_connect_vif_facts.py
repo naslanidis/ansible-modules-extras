@@ -19,7 +19,7 @@ module: ec2_direct_connect_vif_facts
 short_description: Gather facts about virtual interfaces for direct connect connections
 description:
     - Gather facts about virtual interfaces for direct connect connections
-version_added: "2.1"
+version_added: "2.2"
 author: "Nick Aslanidis (@naslanidis)"
 options:
   connectionId:
