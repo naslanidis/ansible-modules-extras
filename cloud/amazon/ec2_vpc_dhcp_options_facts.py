@@ -19,7 +19,8 @@ module: ec2_vpc_dhcp_options_facts
 short_description: Gather facts about dhcp options sets in AWS
 description:
     - Gather facts about dhcp options sets in AWS
-version_added: "2.1"
+version_added: "2.2"
+requirements: [ boto3 ]
 author: "Nick Aslanidis (@naslanidis)"
 options:
   filters:
@@ -76,8 +77,9 @@ changed:
     returned: always
 '''
 
+import json
+
 try:
-    import json
     import botocore
     import boto3   
     HAS_BOTO3 = True
@@ -123,7 +125,11 @@ def list_dhcp_options(client, module):
     for dhcp_option in all_dhcp_options['DhcpOptions']:
         all_dhcp_options_array.append(get_dhcp_options_info(dhcp_option))
 
-    module.exit_json(dhcp_options=all_dhcp_options_array)
+    snaked_dhcp_options_array = []
+    for dhcp_option in all_dhcp_options_array:
+         snaked_dhcp_options_array.append(camel_dict_to_snake_dict(dhcp_option))
+     
+    module.exit_json(dhcp_options=snaked_dhcp_options_array)
 
 
 def main():
