@@ -20,6 +20,7 @@ short_description: Gather facts about virtual interfaces for direct connect conn
 description:
     - Gather facts about virtual interfaces for direct connect connections
 version_added: "2.2"
+requirements: [ boto3 ]
 author: "Nick Aslanidis (@naslanidis)"
 options:
   connectionId:
@@ -76,8 +77,9 @@ changed:
     returned: always
 '''
 
+import json
+
 try:
-    import json
     import botocore
     import boto3  
     HAS_BOTO3 = True
@@ -94,14 +96,24 @@ def get_dc_vifs_info(dc_vif):
                    'virtualInterfaceName': dc_vif['virtualInterfaceName'],
                    'vlan': dc_vif['vlan'],
                    'asn': dc_vif['asn'],
-                   'authKey': dc_vif['authKey'],
+                   'authKey': None,
                    'amazonAddress': dc_vif['amazonAddress'],
                    'customerAddress': dc_vif['customerAddress'],
                    'virtualInterfaceState': dc_vif['virtualInterfaceState'],
-                   'customerRouterConfig': dc_vif['customerRouterConfig'],
-                   'virtualGatewayId': dc_vif['virtualGatewayId'],
+                   'customerRouterConfig': None,
+                   'virtualGatewayId': None,
                    'routeFilterPrefixes': dc_vif['routeFilterPrefixes']
                   }
+    
+    if 'authKey' in dc_vif.keys():
+        dc_vif_info['authKey'] = dc_vif['authKey']
+
+    if 'customerRouterConfig' in dc_vif.keys():
+        dc_vif_info['customerRouterConfig'] = dc_vif['customerRouterConfig']
+
+    if 'virtualGatewayId' in dc_vif.keys():
+        dc_vif_info['virtualGatewayId'] = dc_vif['virtualGatewayId']
+
     return dc_vif_info
 
 
@@ -123,7 +135,11 @@ def list_dc_vifs(client, module):
     for dc_vif in all_dc_vifs['virtualInterfaces']:
         all_dc_vifs_array.append(get_dc_vifs_info(dc_vif))
 
-    module.exit_json(direct_connect_vifs=all_dc_vifs_array)
+    snaked_dc_vifs_array = []
+    for vif in all_dc_vifs_array:
+        snaked_dc_vifs_array.append(camel_dict_to_snake_dict(vif))
+    
+    module.exit_json(direct_connect_vifs=snaked_dc_vifs_array)
 
 
 def main():
