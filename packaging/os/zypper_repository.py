@@ -98,11 +98,18 @@ options:
         default: "no"
         choices: ["yes", "no"]
         version_added: "2.2"
-
+    enabled:
+        description:
+            - Set repository to enabled (or disabled).
+        required: false
+        default: "yes"
+        choices: ["yes", "no"]
+        version_added: "2.2"
 
 
 requirements: 
     - "zypper >= 1.0  # included in openSuSE >= 11.1 or SuSE Linux Enterprise Server/Desktop >= 11.0"
+    - python-xml
 '''
 
 EXAMPLES = '''
@@ -273,9 +280,10 @@ def get_zypper_version(module):
 
 def runrefreshrepo(module, auto_import_keys=False, shortname=None):
     "Forces zypper to refresh repo metadata."
-    cmd = _get_cmd('refresh', '--force')
     if auto_import_keys:
-        cmd.append('--gpg-auto-import-keys')
+        cmd = _get_cmd('--gpg-auto-import-keys', 'refresh', '--force')
+    else:
+        cmd = _get_cmd('refresh', '--force')
     if shortname is not None:
         cmd.extend(['-r', shortname])
 

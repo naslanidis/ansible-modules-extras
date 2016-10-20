@@ -20,17 +20,17 @@ module: dnsmadeeasy
 version_added: "1.3"
 short_description: Interface with dnsmadeeasy.com (a DNS hosting service).
 description:
-   - "Manages DNS records via the v2 REST API of the DNS Made Easy service.  It handles records only; there is no manipulation of domains or monitor/account support yet. See: U(http://www.dnsmadeeasy.com/services/rest-api/)"
+   - "Manages DNS records via the v2 REST API of the DNS Made Easy service.  It handles records only; there is no manipulation of domains or monitor/account support yet. See: U(https://www.dnsmadeeasy.com/integration/restapi/)"
 options:
   account_key:
     description:
-      - Accout API Key.
+      - Account API Key.
     required: true
     default: null
     
   account_secret:
     description:
-      - Accout Secret Key.
+      - Account Secret Key.
     required: true
     default: null
     
@@ -121,7 +121,8 @@ try:
     from time import strftime, gmtime
     import hashlib
     import hmac
-except ImportError, e:
+except ImportError:
+    e = get_exception()
     IMPORT_ERROR = str(e)
 
 class DME2:
@@ -170,7 +171,7 @@ class DME2:
 
         try:
             return json.load(response)
-        except Exception, e:
+        except Exception:
             return {}
 
     def getDomain(self, domain_id):

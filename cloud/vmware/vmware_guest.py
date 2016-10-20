@@ -95,7 +95,7 @@ extends_documentation_fragment: vmware.documentation
 EXAMPLES = '''
 Example from Ansible playbook
 #
-# Crate VM from template
+# Create a VM from a template
 #
     - name: create the VM
       vmware_guest:
@@ -294,7 +294,7 @@ class PyVmomiHelper(object):
         folder_path = None
 
         if uuid:
-            vm = self.si.content.searchIndex.FindByUuid(uuid=uuid, vmSearch=True)
+            vm = self.content.searchIndex.FindByUuid(uuid=uuid, vmSearch=True)
 
         elif folder:
 
@@ -524,14 +524,19 @@ class PyVmomiHelper(object):
         hostsystem = get_obj(self.content, [vim.HostSystem], self.params['esxi_hostname'])
 
         # set the destination datastore in the relocation spec
+        datastore_name = None
+        datastore = None
         if self.params['disk']:
-            datastore_name = self.params['disk'][0]['datastore']
-            datastore = get_obj(self.content, [vim.Datastore], datastore_name)
-        else:
+            if 'datastore' in self.params['disk'][0]:
+                datastore_name = self.params['disk'][0]['datastore']
+                datastore = get_obj(self.content, [vim.Datastore], datastore_name)
+        if not datastore:
             # use the template's existing DS
             disks = [x for x in template.config.hardware.device if isinstance(x, vim.vm.device.VirtualDisk)]
             datastore = disks[0].backing.datastore
             datastore_name = datastore.name
+        if not datastore:
+            self.module.fail_json(msg="Failed to find a matching datastore")
 
         # create the relocation spec
         relospec = vim.vm.RelocateSpec()
@@ -611,6 +616,17 @@ class PyVmomiHelper(object):
             # tell the configspec that the disk device needs to change
             configspec = vim.vm.ConfigSpec(deviceChange=[diskspec])
             clonespec_kwargs['config'] = configspec
+
+        # set cpu/memory/etc
+        if 'hardware' in self.params:
+            if not 'config' in clonespec_kwargs:
+                clonespec_kwargs['config'] = vim.vm.ConfigSpec()
+            if 'num_cpus' in self.params['hardware']:
+                clonespec_kwargs['config'].numCPUs = \
+                    int(self.params['hardware']['num_cpus'])
+            if 'memory_mb' in self.params['hardware']:
+                clonespec_kwargs['config'].memoryMB = \
+                    int(self.params['hardware']['memory_mb'])
 
         clonespec = vim.vm.CloneSpec(**clonespec_kwargs)
         task = template.Clone(folder=destfolder, name=self.params['name'], spec=clonespec)
