@@ -131,7 +131,8 @@ EXAMPLES = '''
    - Id: i-98765432
      Port: 80
   state: present
-
+  wait_timeout: 200
+  wait: True
 '''
 
 RETURN = '''
@@ -217,6 +218,26 @@ def diff_list(a, b):
     """Find the entries in list a that are not in list b"""
     b = set(b)
     return [aa for aa in a if aa not in b]
+
+
+def wait_for_status(connection, module, target_group_arn, targets, status):
+    polling_increment_secs = 5
+    max_retries = (module.params.get('wait_timeout') / polling_increment_secs)
+    status_achieved = False
+
+    for x in range(0, max_retries):
+        try:
+            response = connection.describe_target_health(TargetGroupArn=target_group_arn, Targets=targets)
+            if response['TargetHealthDescriptions'][0]['TargetHealth']['State'] == status:
+                status_achieved = True
+                break
+            else:
+                time.sleep(polling_increment_secs)
+        except botocore.exceptions.ClientError as e:
+            module.fail_json(msg=str(e))
+
+    result = response
+    return status_achieved, result
 
 
 def create_or_update_target_group(connection, module):
@@ -308,17 +329,17 @@ def create_or_update_target_group(connection, module):
         if module.params.get("targets"):
             params['Targets'] = module.params.get("targets")
 
-            # get list of current target instances. I can't see anything like a describe targets in the doco so 
+            # get list of current target instances. I can't see anything like a describe targets in the doco so
             # describe_target_health seems to be the only way to get them
 
             try:
                 current_targets = connection.describe_target_health(TargetGroupArn=tg['TargetGroupArn'])
             except (ClientError, NoCredentialsError) as e:
                 module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
-            
+
             current_instances = current_targets['TargetHealthDescriptions']
             current_instance_ids = []
-            
+
             for instance in current_targets['TargetHealthDescriptions']:
                 current_instance_ids.append(instance['Target']['Id'])
 
@@ -327,7 +348,7 @@ def create_or_update_target_group(connection, module):
                 new_instance_ids.append(instance['Id'])
 
             add_instances = diff_list(new_instance_ids, current_instance_ids)
-       
+
             if add_instances:
                 instances_to_add = []
                 for target in params['Targets']:
@@ -339,6 +360,11 @@ def create_or_update_target_group(connection, module):
                     connection.register_targets(TargetGroupArn=tg['TargetGroupArn'], Targets=instances_to_add)
                 except (ClientError, NoCredentialsError) as e:
                     module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
+
+                if module.params.get("wait"):
+                    status_achieved, registered_instances = wait_for_status(connection, module, tg['TargetGroupArn'], instances_to_add, 'healthy')
+                    if not status_achieved:
+                        module.fail_json(msg='Error waiting for target registration - please check the AWS console')
 
 
             remove_instances = diff_list(current_instance_ids, new_instance_ids)
@@ -355,24 +381,34 @@ def create_or_update_target_group(connection, module):
                 except (ClientError, NoCredentialsError) as e:
                     module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
 
+                if module.params.get("wait"):
+                    status_achieved, registered_instances = wait_for_status(connection, module, tg['TargetGroupArn'], instances_to_remove, 'unused')
+                    if not status_achieved:
+                        module.fail_json(msg='Error waiting for target deregistration - please check the AWS console')
+
         else:  
             try:
                 current_targets = connection.describe_target_health(TargetGroupArn=tg['TargetGroupArn'])
             except (ClientError, NoCredentialsError) as e:
                 module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
-            
+
             current_instances = current_targets['TargetHealthDescriptions']
 
             if current_instances:
                 instances_to_remove = []
                 for target in current_targets['TargetHealthDescriptions']:
                     instances_to_remove.append({'Id': target['Target']['Id'], 'Port': target['Target']['Port'] })
-                
+
                 changed = True
                 try:
                     connection.deregister_targets(TargetGroupArn=tg['TargetGroupArn'], Targets=instances_to_remove)
                 except (ClientError, NoCredentialsError) as e:
                     module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
+
+                if module.params.get("wait"):
+                    status_achieved, registered_instances = wait_for_status(connection, module, tg['TargetGroupArn'], instances_to_remove, 'unused')
+                    if not status_achieved:
+                        module.fail_json(msg='Error waiting for target deregistration - please check the AWS console')
 
     else:
         try:
@@ -382,13 +418,18 @@ def create_or_update_target_group(connection, module):
             module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
 
         tg = get_target_group(connection, module)
-        
+
         if module.params.get("targets"):
             params['Targets'] = module.params.get("targets")
             try:
                 connection.register_targets(TargetGroupArn=tg['TargetGroupArn'], Targets=params['Targets'])
             except (ClientError, NoCredentialsError) as e:
                 module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
+
+            if module.params.get("wait"):
+                status_achieved, registered_instances = wait_for_status(connection, module, tg['TargetGroupArn'], params['Targets'], 'healthy')
+                if not status_achieved:
+                    module.fail_json(msg='Error waiting for target registration - please check the AWS console')
 
     # Get the target group again
     tg = get_target_group(connection, module)
@@ -429,7 +470,9 @@ def main():
             unhealthy_threshold_count=dict(required=False, default=2, type='int'),
             state=dict(required=True, choices=['present', 'absent'], type='str'),
             successful_response_codes=dict(required=False, default='200', type='str'),
-            targets=dict(required=False, type='list')
+            targets=dict(required=False, type='list'),
+            wait_timeout=dict(required=False, type='int'),
+            wait=dict(required=False, type='bool')
         )
     )
 
