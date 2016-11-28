@@ -20,7 +20,7 @@ module: elb_target_group
 short_description: Manage a target group for an Application load balancer
 description:
     - Manage an AWS Application Elastic Load Balancer target group. See U(http://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-target-groups.html) for details.
-version_added: "2.2"
+version_added: "2.3"
 author: "Rob White (@wimnat)"
 options:
   name:
@@ -97,7 +97,7 @@ EXAMPLES = '''
 # Create a target group with a default health check
 - elb_target_group:
     name: mytargetgroup
-    protocol: http
+    protocol: HTTP
     port: 80
     vpc_id: vpc-01234567
     state: present
@@ -105,7 +105,7 @@ EXAMPLES = '''
 # Modify the target group with a custom health check
 - elb_target_group:
     name: mytargetgroup
-    protocol: http
+    protocol: HTTP
     port: 80
     vpc_id: vpc-01234567
     health_check_path: /
@@ -198,6 +198,7 @@ load_balancer_arns:
 
 try:
     import boto3
+    import q
     from botocore.exceptions import ClientError, NoCredentialsError
     HAS_BOTO3 = True
 except ImportError:
@@ -213,6 +214,7 @@ def get_target_group(connection, module):
             return None
         else:
             module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
+
 
 def diff_list(a, b):
     """Find the entries in list a that are not in list b"""
@@ -234,10 +236,38 @@ def wait_for_status(connection, module, target_group_arn, targets, status):
             else:
                 time.sleep(polling_increment_secs)
         except botocore.exceptions.ClientError as e:
-            module.fail_json(msg=str(e))
+            module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
 
     result = response
     return status_achieved, result
+
+
+def update_tg_attributes(connection, module, tg):
+    """Update ELB attributes. Return true if changed, else false"""
+
+    attribute_changed = False
+    update_required = False
+    params = dict()
+
+    tg_attributes = connection.describe_target_group_attributes(TargetGroupArn=tg['TargetGroupArn'])
+
+    if module.params.get("attributes"):
+        params['Attributes'] = module.params.get("attributes")
+
+        for new_attribute in params['Attributes']:
+            for current_attribute in tg_attributes['Attributes']:
+                if new_attribute['Key'] == current_attribute['Key']:
+                    if new_attribute['Value'] != current_attribute['Value']:
+                        update_required = True
+
+    if update_required: 
+        attribute_changed = True
+        try:
+            connection.modify_target_group_attributes(TargetGroupArn=tg['TargetGroupArn'], Attributes=params['Attributes'])
+        except (ClientError, NoCredentialsError) as e:
+                module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
+    
+    return attribute_changed
 
 
 def create_or_update_target_group(connection, module):
@@ -254,10 +284,10 @@ def create_or_update_target_group(connection, module):
         params['HealthCheckPath'] = module.params.get("health_check_path")
 
         if module.params.get("health_check_protocol") is not None:
-            params['HealthCheckProtocol'] = module.params.get("health_check_protocol")
+            params['HealthCheckProtocol'] = module.params.get("health_check_protocol").upper()
 
         if module.params.get("health_check_port") is not None:
-            params['HealthCheckPort'] = module.params.get("health_check_port")
+            params['HealthCheckPort'] = str(module.params.get("health_check_port"))
 
         if module.params.get("health_check_interval") is not None:
             params['HealthCheckIntervalSeconds'] = module.params.get("health_check_interval")
@@ -410,6 +440,13 @@ def create_or_update_target_group(connection, module):
                     if not status_achieved:
                         module.fail_json(msg='Error waiting for target deregistration - please check the AWS console')
 
+
+        if module.params.get("attributes"):
+            # Now set tg attributes. 
+            attribute_changed = update_tg_attributes(connection, module, tg)
+            if attribute_changed:
+                changed = True
+
     else:
         try:
             connection.create_target_group(**params)
@@ -430,6 +467,12 @@ def create_or_update_target_group(connection, module):
                 status_achieved, registered_instances = wait_for_status(connection, module, tg['TargetGroupArn'], params['Targets'], 'healthy')
                 if not status_achieved:
                     module.fail_json(msg='Error waiting for target registration - please check the AWS console')
+
+        if module.params.get("attributes"):
+            # Now set tg attributes
+            attribute_changed = update_tg_attributes(connection, module, tg)
+            if attribute_changed:
+                changed = True
 
     # Get the target group again
     tg = get_target_group(connection, module)
@@ -471,6 +514,7 @@ def main():
             state=dict(required=True, choices=['present', 'absent'], type='str'),
             successful_response_codes=dict(required=False, default='200', type='str'),
             targets=dict(required=False, type='list'),
+            attributes=dict(required=False, type='list'),
             wait_timeout=dict(required=False, type='int'),
             wait=dict(required=False, type='bool')
         )
