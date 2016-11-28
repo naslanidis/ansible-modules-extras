@@ -198,6 +198,7 @@ load_balancer_arns:
 
 try:
     import boto3
+    import q
     from botocore.exceptions import ClientError, NoCredentialsError
     HAS_BOTO3 = True
 except ImportError:
@@ -239,6 +240,34 @@ def wait_for_status(connection, module, target_group_arn, targets, status):
 
     result = response
     return status_achieved, result
+
+
+def update_tg_attributes(connection, module, tg):
+    """Update ELB attributes. Return true if changed, else false"""
+
+    attribute_changed = False
+    update_required = False
+    params = dict()
+
+    tg_attributes = connection.describe_target_group_attributes(TargetGroupArn=tg['TargetGroupArn'])
+
+    if module.params.get("attributes"):
+        params['Attributes'] = module.params.get("attributes")
+
+        for new_attribute in params['Attributes']:
+            for current_attribute in tg_attributes['Attributes']:
+                if new_attribute['Key'] == current_attribute['Key']:
+                    if new_attribute['Value'] != current_attribute['Value']:
+                        update_required = True
+
+    if update_required: 
+        attribute_changed = True
+        try:
+            connection.modify_target_group_attributes(TargetGroupArn=tg['TargetGroupArn'], Attributes=params['Attributes'])
+        except (ClientError, NoCredentialsError) as e:
+                module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
+    
+    return attribute_changed
 
 
 def create_or_update_target_group(connection, module):
@@ -411,6 +440,13 @@ def create_or_update_target_group(connection, module):
                     if not status_achieved:
                         module.fail_json(msg='Error waiting for target deregistration - please check the AWS console')
 
+
+        if module.params.get("attributes"):
+            # Now set tg attributes. 
+            attribute_changed = update_tg_attributes(connection, module, tg)
+            if attribute_changed:
+                changed = True
+
     else:
         try:
             connection.create_target_group(**params)
@@ -431,6 +467,12 @@ def create_or_update_target_group(connection, module):
                 status_achieved, registered_instances = wait_for_status(connection, module, tg['TargetGroupArn'], params['Targets'], 'healthy')
                 if not status_achieved:
                     module.fail_json(msg='Error waiting for target registration - please check the AWS console')
+
+        if module.params.get("attributes"):
+            # Now set tg attributes
+            attribute_changed = update_tg_attributes(connection, module, tg)
+            if attribute_changed:
+                changed = True
 
     # Get the target group again
     tg = get_target_group(connection, module)
@@ -472,6 +514,7 @@ def main():
             state=dict(required=True, choices=['present', 'absent'], type='str'),
             successful_response_codes=dict(required=False, default='200', type='str'),
             targets=dict(required=False, type='list'),
+            attributes=dict(required=False, type='list'),
             wait_timeout=dict(required=False, type='int'),
             wait=dict(required=False, type='bool')
         )
